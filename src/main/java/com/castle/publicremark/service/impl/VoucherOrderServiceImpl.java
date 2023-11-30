@@ -76,25 +76,25 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 }
             }
         }
+    }
 
-        private void handleVoucherOrder(VoucherOrder voucherOrder) {
-            // 1.获取用户
-            Long userId = voucherOrder.getUserId();
-            // 2.创建锁对象
-            RLock lock = redissonClient.getLock("lock:order:" + userId);
-            // 3.获取锁
-            boolean isLock = lock.tryLock();
-            // 4.判断是否获取锁成功
-            if (!isLock) {
-                // 获取锁失败，返回错误（兜底方案，理论上不存在并发安全问题，可不加锁）
-                log.error("不允许重复下单！");
-                return;
-            }
-            try {
-                proxy.createVoucherOrder(voucherOrder);
-            } finally {
-                lock.unlock();
-            }
+    private void handleVoucherOrder(VoucherOrder voucherOrder) {
+        // 1.获取用户
+        Long userId = voucherOrder.getUserId();
+        // 2.创建锁对象
+        RLock lock = redissonClient.getLock("lock:order:" + userId);
+        // 3.获取锁
+        boolean isLock = lock.tryLock();
+        // 4.判断是否获取锁成功
+        if (!isLock) {
+            // 获取锁失败，返回错误（兜底方案，理论上不存在并发安全问题，可不加锁）
+            log.error("不允许重复下单！");
+            return;
+        }
+        try {
+            proxy.createVoucherOrder(voucherOrder);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -123,7 +123,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         voucherOrder.setUserId(userId);
         // 2.5.代金券id
         voucherOrder.setVoucherId(voucherId);
-        save(voucherOrder);
         // 2.6.阻塞队列
         orderTasks.add(voucherOrder);
 
@@ -187,7 +186,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // 扣减库存
         boolean success = seckillVoucherService.update()
                 .setSql("stock = stock - 1")
-                .eq("voucher_id", userId)
+                .eq("voucher_id", voucherId)
                 .gt("stock", 0)
                 .update();
         if (!success) {
