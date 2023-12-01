@@ -1,9 +1,11 @@
 package com.castle.publicremark.service.impl;
 
-import cn.hutool.core.util.BooleanUtil;
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.castle.publicremark.dto.Result;
+import com.castle.publicremark.dto.UserDTO;
 import com.castle.publicremark.entity.Blog;
 import com.castle.publicremark.entity.User;
 import com.castle.publicremark.mapper.BlogMapper;
@@ -11,6 +13,7 @@ import com.castle.publicremark.service.IBlogService;
 import com.castle.publicremark.service.IUserService;
 import com.castle.publicremark.utils.SystemConstants;
 import com.castle.publicremark.utils.UserHolder;
+import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.castle.publicremark.utils.RedisConstants.BLOG_LIKED_KEY;
 
@@ -66,11 +71,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     private void isBlogLiked(Blog blog) {
         // 1.获取登录用户
-        Long userId = UserHolder.getUser().getId();
+        UserDTO user = UserHolder.getUser();
+        if (Objects.isNull(user)) {
+            // 用户未登录，无需查询是否点赞
+            return;
+        }
+        Long userId = user.getId();
         // 2.判断当前登录用户是否已经点赞
         String blogKey = BLOG_LIKED_KEY + blog.getId();
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(blogKey, userId.toString());
-        blog.setIsLike(BooleanUtil.isTrue(isMember));
+        Double score = stringRedisTemplate.opsForZSet().score(blogKey, userId.toString());
+        blog.setIsLike(Objects.nonNull(score));
     }
 
     @Override
@@ -80,14 +90,14 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         Long userId = UserHolder.getUser().getId();
         // 2.判断当前登录用户是否已经点赞
         String blogKey = BLOG_LIKED_KEY + id;
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(blogKey, userId.toString());
-        if (BooleanUtil.isFalse(isMember)) {
+        Double score = stringRedisTemplate.opsForZSet().score(blogKey, userId.toString());
+        if (Objects.isNull(score)) {
             // 3.如果未点赞，可以点赞
             // 3.1.数据库点赞数 + 1
             boolean isSuccess = update().setSql("liked = liked + 1").eq("id", id).update();
-            // 3.2.保存用户到Redis的set集合
+            // 3.2.保存用户到Redis的ZSet集合 zadd key value score
             if (isSuccess) {
-                stringRedisTemplate.opsForSet().add(blogKey, userId.toString());
+                stringRedisTemplate.opsForZSet().add(blogKey, userId.toString(), System.currentTimeMillis());
             }
         } else {
             // 4.如果已点赞，取消点赞
@@ -95,7 +105,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             boolean isSuccess = update().setSql("liked = liked - 1").eq("id", id).update();
             // 4.2.把用户从Redis的set集合中移除
             if (isSuccess) {
-                stringRedisTemplate.opsForSet().remove(blogKey, userId.toString());
+                stringRedisTemplate.opsForZSet().remove(blogKey, userId.toString());
             }
         }
         return Result.success();
@@ -106,5 +116,25 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         User user = userService.getById(userId);
         blog.setName(user.getNickName());
         blog.setIcon(user.getIcon());
+    }
+
+    @Override
+    public Result queryBlogLikes(Long id) {
+        String key = BLOG_LIKED_KEY + id;
+        // 1.查询top5的点赞用户 zrange key 0 4
+        Set<String> range = stringRedisTemplate.opsForZSet().range(key, 0, 4);
+        if (Objects.isNull(range) || range.isEmpty()) {
+            return Result.success();
+        }
+        // 2.解析出其中的用户id
+        List<Long> ids = range.stream().map(Long::valueOf).collect(Collectors.toList());
+        String idStr = StrUtil.join(",", ids);
+        // 3.根据用户id查询用户 WHERE id IN (5, 1) ORDER BY FIELD(id, 5, 1)
+        List<UserDTO> userDtoList = userService.query()
+                .in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list()
+                .stream().map(user -> BeanUtil.copyProperties(user, UserDTO.class))
+                .collect(Collectors.toList());
+        // 4.返回
+        return Result.success(userDtoList);
     }
 }
