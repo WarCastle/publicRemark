@@ -1,7 +1,10 @@
 package com.castle.publicremark.controller;
 
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.castle.publicremark.dto.Result;
+import com.castle.publicremark.service.IFollowService;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
 
 /**
  * @author YuLong
@@ -10,4 +13,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/follow")
 public class FollowController {
+
+    @Resource
+    private IFollowService followService;
+
+    @PutMapping("/{id}/{isFollow}")
+    public Result follow(@PathVariable("id") Long followUserId, @PathVariable("isFollow") Boolean isFollow) {
+        return followService.follow(followUserId, isFollow);
+    }
+
+    @GetMapping("/or/not/{id}")
+    public Result follow(@PathVariable("id") Long followUserId) {
+        return followService.isFollow(followUserId);
+    }
 }

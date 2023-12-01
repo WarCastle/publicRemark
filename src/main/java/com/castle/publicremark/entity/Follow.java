@@ -39,6 +39,11 @@ public class Follow {
     private Long userId;
 
     /**
+     * 关联的用户id
+     */
+    private Long followUserId;
+
+    /**
      * 用户图标
      */
     @TableField(exist = false)
