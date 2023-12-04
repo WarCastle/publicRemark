@@ -1,8 +1,10 @@
 package com.castle.publicremark.controller;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.castle.publicremark.dto.LoginFormDTO;
 import com.castle.publicremark.dto.Result;
 import com.castle.publicremark.dto.UserDTO;
+import com.castle.publicremark.entity.User;
 import com.castle.publicremark.entity.UserInfo;
 import com.castle.publicremark.service.IUserInfoService;
 import com.castle.publicremark.service.IUserService;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
+import java.util.Objects;
 
 /**
  * @author YuLong
@@ -76,5 +79,16 @@ public class UserController {
         info.setUpdateTime(null);
         // 返回
         return Result.success(info);
+    }
+
+    @GetMapping("/{id}")
+    public Result queryUserById(@PathVariable("id") Long userId) {
+        // 查询详情
+        User user = userService.getById(userId);
+        if (Objects.isNull(user)) {
+            return Result.success();
+        }
+        UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+        return Result.success(userDTO);
     }
 }
