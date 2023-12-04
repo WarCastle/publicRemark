@@ -15,6 +15,9 @@ import com.castle.publicremark.service.IFollowService;
 import com.castle.publicremark.service.IUserService;
 import com.castle.publicremark.utils.SystemConstants;
 import com.castle.publicremark.utils.UserHolder;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,8 +34,11 @@ import static com.castle.publicremark.utils.RedisConstants.*;
  * @author YuLong
  * Date: 2022/11/16 20:18
  */
+@Slf4j
 @Service
 public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IBlogService {
+
+    private static final Logger logger = LoggerFactory.getLogger(BlogServiceImpl.class);
 
     @Resource
     private IUserService userService;
@@ -44,25 +50,35 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     private IFollowService followService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result saveBlog(Blog blog) {
-        // 1.获取登录用户
-        UserDTO user = UserHolder.getUser();
-        blog.setUserId(user.getId());
-        // 2.保存探店博文
-        boolean isSuccess = save(blog);
-        if (!isSuccess) {
-            return Result.fail("新增笔记失败！");
+        stringRedisTemplate.setEnableTransactionSupport(true);
+        try {
+            // 1.获取登录用户
+            UserDTO user = UserHolder.getUser();
+            blog.setUserId(user.getId());
+            // 2.保存探店博文
+            boolean isSuccess = save(blog);
+            if (!isSuccess) {
+                return Result.fail("新增笔记失败！");
+            }
+            // 3.查询笔记作者的所有粉丝 select * from tb_follow where follow_user_id = ?
+            List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
+            // 4.推送笔记id给所有粉丝
+            stringRedisTemplate.multi();
+            follows.forEach(follow -> {
+                // 4.1.获取粉丝id
+                Long userId = follow.getUserId();
+                // 4.2.推送
+                String feedKey = USER_FEED_KEY + userId;
+                stringRedisTemplate.opsForZSet().add(feedKey, blog.getId().toString(), System.currentTimeMillis());
+            });
+            stringRedisTemplate.exec();
+        } catch (Exception e) {
+            stringRedisTemplate.discard();
+            logger.error("发笔记推送到粉丝收件箱失败 : {}", e.getMessage());
+            throw new RuntimeException("发笔记推送到粉丝收件箱失败！");
         }
-        // 3.查询笔记作者的所有粉丝 select * from tb_follow where follow_user_id = ?
-        List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
-        // 4.推送笔记id给所有粉丝
-        follows.forEach(follow -> {
-            // 4.1.获取粉丝id
-            Long userId = follow.getUserId();
-            // 4.2.推送
-            String feedKey = USER_FEED_KEY + userId;
-            stringRedisTemplate.opsForZSet().add(feedKey, blog.getId().toString(), System.currentTimeMillis());
-        });
         // 5.返回id
         return Result.success(blog.getId());
     }
