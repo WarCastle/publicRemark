@@ -4,9 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.castle.publicremark.dto.Result;
 import com.castle.publicremark.dto.UserDTO;
 import com.castle.publicremark.entity.Blog;
-import com.castle.publicremark.entity.User;
 import com.castle.publicremark.service.IBlogService;
-import com.castle.publicremark.service.IUserService;
 import com.castle.publicremark.utils.SystemConstants;
 import com.castle.publicremark.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
@@ -24,18 +22,10 @@ public class BlogController {
 
     @Resource
     private IBlogService blogService;
-    @Resource
-    private IUserService userService;
 
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
-        // 获取登录用户
-        UserDTO userDTO = UserHolder.getUser();
-        blog.setUserId(userDTO.getId());
-        // 保存探店博文
-        blogService.save(blog);
-        // 返回id
-        return Result.success(blog.getId());
+        return blogService.saveBlog(blog);
     }
 
     @PutMapping("/like/{id}")

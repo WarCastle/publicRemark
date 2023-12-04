@@ -7,13 +7,14 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.castle.publicremark.dto.Result;
 import com.castle.publicremark.dto.UserDTO;
 import com.castle.publicremark.entity.Blog;
+import com.castle.publicremark.entity.Follow;
 import com.castle.publicremark.entity.User;
 import com.castle.publicremark.mapper.BlogMapper;
 import com.castle.publicremark.service.IBlogService;
+import com.castle.publicremark.service.IFollowService;
 import com.castle.publicremark.service.IUserService;
 import com.castle.publicremark.utils.SystemConstants;
 import com.castle.publicremark.utils.UserHolder;
-import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.castle.publicremark.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.castle.publicremark.utils.RedisConstants.*;
 
 /**
  * @author YuLong
@@ -38,6 +39,33 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private IFollowService followService;
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 1.获取登录用户
+        UserDTO user = UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 2.保存探店博文
+        boolean isSuccess = save(blog);
+        if (!isSuccess) {
+            return Result.fail("新增笔记失败！");
+        }
+        // 3.查询笔记作者的所有粉丝 select * from tb_follow where follow_user_id = ?
+        List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
+        // 4.推送笔记id给所有粉丝
+        follows.forEach(follow -> {
+            // 4.1.获取粉丝id
+            Long userId = follow.getUserId();
+            // 4.2.推送
+            String feedKey = USER_FEED_KEY + userId;
+            stringRedisTemplate.opsForZSet().add(feedKey, blog.getId().toString(), System.currentTimeMillis());
+        });
+        // 5.返回id
+        return Result.success(blog.getId());
+    }
 
     @Override
     public Result queryHotBlog(Integer current) {

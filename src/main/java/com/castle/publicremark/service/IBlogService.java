@@ -9,6 +9,8 @@ import com.castle.publicremark.entity.Blog;
  * Date: 2022/11/16 19:59
  */
 public interface IBlogService extends IService<Blog> {
+    Result saveBlog(Blog blog);
+
     Result queryHotBlog(Integer current);
 
     Result queryBlogById(Long id);
