@@ -16,4 +16,6 @@ public class SystemConstants {
     public static final int NOT_AUTH_CODE = 401;
 
     public static final String AUTHORIZATION = "authorization";
+
+    public static final String MONTH_DEFAULT_FORMAT_SUFFIX = ":yyyy:MM";
 }

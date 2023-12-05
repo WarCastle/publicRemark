@@ -13,19 +13,24 @@ import com.castle.publicremark.mapper.UserMapper;
 import com.castle.publicremark.service.IUserService;
 import com.castle.publicremark.utils.RegexUtils;
 import com.castle.publicremark.utils.SystemConstants;
+import com.castle.publicremark.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import static com.castle.publicremark.utils.RedisConstants.*;
-import static com.castle.publicremark.utils.SystemConstants.AUTH_PHONE;
-import static com.castle.publicremark.utils.SystemConstants.USER_NICK_AFTER_DIGIT;
+import static com.castle.publicremark.utils.SystemConstants.*;
 
 /**
  * @author YuLong
@@ -130,6 +135,64 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         save(user);
         log.info("创建新用户成功，新用户昵称为：{}", username);
         return user;
+    }
+
+    @Override
+    public Result sign() {
+        // 1.获取当前登录用户
+        Long userId = UserHolder.getUser().getId();
+        // 2.获取日期
+        LocalDateTime now = LocalDateTime.now();
+        // 3.拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(MONTH_DEFAULT_FORMAT_SUFFIX));
+        String monthKey = USER_SIGN_KEY + userId + keySuffix;
+        // 4.获取今天是本月的第几天
+        int dayOfMonth = now.getDayOfMonth();
+        // 5.写入Redis SETBIT key offset 1
+        stringRedisTemplate.opsForValue().setBit(monthKey, dayOfMonth - 1, true);
+        return Result.success();
+    }
+
+    @Override
+    public Result signCount() {
+        // 1.获取当前登录用户
+        Long userId = UserHolder.getUser().getId();
+        // 2.获取日期
+        LocalDateTime now = LocalDateTime.now();
+        // 3.拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(MONTH_DEFAULT_FORMAT_SUFFIX));
+        String monthKey = USER_SIGN_KEY + userId + keySuffix;
+        // 4.获取今天是本月的第几天
+        int dayOfMonth = now.getDayOfMonth();
+        // 5.获取本月截止到今天为止的所有签到记录，返回的是一个十进制的数字 BITFIELD user:sign:1012:2023:12 GET u5 0
+        List<Long> result = stringRedisTemplate.opsForValue().bitField(
+                monthKey, BitFieldSubCommands.create()
+                        .get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth))
+                        .valueAt(0)
+        );
+        if (Objects.isNull(result) || result.isEmpty()) {
+            // 没有任何签到结果
+            return Result.success(0);
+        }
+        Long num = result.get(0);
+        if (Objects.isNull(num) || num == 0) {
+            return Result.success(0);
+        }
+        // 6.循环遍历
+        int count = 0;
+        while (true) {
+            // 6.1.让这个数字与1做与运算，得到数字的最后一个bit位（判断这个bit位是否为0）
+            if ((num & 1) == 0) {
+                // 6.2.如果为0，说明未签到，结束
+                break;
+            } else {
+                // 6.3.如果不为0，说明已签到，计数器+1
+                count++;
+            }
+            // 6.4.把数字右移一位，抛弃最后一个bit位，继续下一个bit位
+            num >>>= 1;
+        }
+        return Result.success(count);
     }
 
 }
