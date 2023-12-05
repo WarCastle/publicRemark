@@ -71,12 +71,10 @@ class PublicRemarkApplicationTests {
         // 2.把店铺分组，按照typeId分组，typeId一致的放到一个集合中
         Map<Long, List<Shop>> map = list.stream().collect(Collectors.groupingBy(Shop::getTypeId));
         // 3.分批写入Redis
-        map.entrySet().forEach(entry -> {
+        map.forEach((typeId, value) -> {
             // 3.1.获取类型id
-            Long typeId = entry.getKey();
             String geoKey = SHOP_GEO_KEY + typeId;
             // 3.2.获取同类型的店铺集合
-            List<Shop> value = entry.getValue();
             List<RedisGeoCommands.GeoLocation<String>> locations = new ArrayList<>(value.size());
             // 3.3.写入Redis GEOADD key 经度 纬度 member
             value.forEach(shop -> {
