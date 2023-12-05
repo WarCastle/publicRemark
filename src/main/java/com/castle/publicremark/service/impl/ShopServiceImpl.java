@@ -52,10 +52,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 逻辑过期解决缓存击穿
         // Shop shopInfo = queryWithLogicalExpire(id);
 
-
         // 利用缓存封装工具和逻辑过期解决缓存穿透
         Long cacheShopTime = CACHE_SHOP_TTL + RandomUtil.randomLong(CACHE_SHOP_TTL);
-        Shop shopInfo = cacheClient.queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class,
+        Shop shopInfo = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class,
                 this::getById, cacheShopTime, TimeUnit.SECONDS);
         if (shopInfo == null) {
             return Result.fail("店铺不存在");
